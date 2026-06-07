@@ -1,35 +1,19 @@
-import os
-import streamlit as st
 from supabase import create_client
-from dotenv import load_dotenv
-from openai import OpenAI
 
-load_dotenv()
+from app.config.settings import get_setting
+from embeddings.embedding_model import get_embedding
 
-# Supabase Client
+
 def get_db():
-    if"supabase_client" in st.session_state:
-        return st.session_state.supabase_client
-    return create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    supabase_url = get_setting("SUPABASE_URL")
+    supabase_key = get_setting("SUPABASE_KEY")
 
-# OpenAI Client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    if not supabase_url or not supabase_key:
+        raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY.")
 
-
-# Embeddings
-def get_embedding(texts):
-    if isinstance(texts, str):
-        texts = [texts]
-
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=texts
-    )
-    return [item.embedding for item in response.data]
+    return create_client(supabase_url, supabase_key)
 
 
-
-# Retrieve (Vector Search)
 def retrieve_chunks(question, top_k=5):
     question_embedding = get_embedding(question)[0]
 
@@ -37,24 +21,25 @@ def retrieve_chunks(question, top_k=5):
         "match_documents",
         {
             "query_embedding": question_embedding,
-            "match_count": top_k
-        }
+            "match_count": top_k,
+        },
     ).execute()
 
     return response.data
 
 
-
-# Store Embeddings
-def store_embeddings(chunks, embeddings, filename=None): 
+def store_embeddings(chunks, embeddings, filename=None):
     data = []
-    for chunk, embedding in zip(chunks, embeddings):
-        data.append({
-            "content": chunk,
-            "embedding": embedding,
-            "metadata": {
-                "filename": filename
-            }
-        })
 
-    get_db.table("documents").insert(data).execute()
+    for chunk, embedding in zip(chunks, embeddings):
+        data.append(
+            {
+                "content": chunk,
+                "embedding": embedding,
+                "metadata": {
+                    "filename": filename,
+                },
+            }
+        )
+
+    get_db().table("documents").insert(data).execute()
